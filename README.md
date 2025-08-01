@@ -3,7 +3,7 @@
 ![Workflow Status](https://github.com/software-students-fall2023/4-containerized-app-exercise-wacotacotruck/actions/workflows/backend.yml/badge.svg?branch=main&kill_cache=1)
 ![Workflow Status](https://github.com/software-students-fall2023/4-containerized-app-exercise-wacotacotruck/actions/workflows/ci-cd.yml/badge.svg?branch=main&kill_cache=1)
 
-# Sing & Sync
+# VocalMIDI
 
 Build a containerized app that uses machine learning. See [instructions](./instructions.md) for details.
 
@@ -28,7 +28,7 @@ If using Google Chrome, follow these steps to address microphone access issues i
 
 ## Description:
 
-Sing & Sync is a web application that utilizes the power of machine learning to convert your voice into midi. With just a few clicks all you have to do is hum, sing or speak into your microphone and it will automatically convert your voice into a musical composition to which you can use in your own Digital Audio Workstations, Songs, or whatever application you'd like! You can browse through other users midi files and search through whatever sounds great to your ears!
+VocalMIDI is a web application that utilizes the power of machine learning to convert your voice into midi. With just a few clicks all you have to do is hum, sing or speak into your microphone and it will automatically convert your voice into a musical composition to which you can use in your own Digital Audio Workstations, Songs, or whatever application you'd like! You can browse through other users midi files and search through whatever sounds great to your ears!
 
 ## Setup: 
 
