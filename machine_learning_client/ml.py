@@ -54,6 +54,34 @@ client = MongoClient("database", 27017)
 db = client["auravoice"]
 collection = db["midis"]
 
+# Test database connection
+try:
+    # Test the connection
+    client.admin.command('ping')
+    logging.info("Successfully connected to MongoDB")
+    
+    # Check if collections exist
+    collections = db.list_collection_names()
+    logging.info(f"Available collections: {collections}")
+    
+    # Check if users collection exists and has data
+    if "users" in collections:
+        user_count = db["users"].count_documents({})
+        logging.info(f"Users collection has {user_count} documents")
+    else:
+        logging.warning("Users collection does not exist")
+        
+    # Check if midis collection exists
+    if "midis" in collections:
+        midi_count = db["midis"].count_documents({})
+        logging.info(f"MIDIs collection has {midi_count} documents")
+    else:
+        logging.warning("MIDIs collection does not exist")
+        
+except Exception as e:
+    logging.error(f"Failed to connect to MongoDB: {e}")
+    raise
+
 # Container configuration
 HOST = "client"
 
@@ -362,10 +390,16 @@ def create_and_store_midi_in_s3(filtered_notes: List[Dict[str, Any]], onsets: np
 
 def find_username(user_id: str) -> str:
     """Find username by user ID."""
+    logging.info(f"Looking up username for user_id: {user_id} (type: {type(user_id)})")
+    
     try:
         user_id_obj = ObjectId(user_id)
+        logging.info(f"Successfully converted user_id to ObjectId: {user_id_obj}")
     except TypeError as e:
         logging.error("Error converting user_id to ObjectId: %s", e)
+        return ""
+    except Exception as e:
+        logging.error(f"Unexpected error converting user_id to ObjectId: {e}")
         return ""
 
     user_collection = db["users"]
@@ -373,7 +407,7 @@ def find_username(user_id: str) -> str:
     
     if user_doc:
         username = user_doc.get("username")
-        logging.info("Found username.")
+        logging.info(f"Found username: {username}")
         return username
     
     logging.error("User not found for user_id: %s", user_id)
@@ -381,20 +415,47 @@ def find_username(user_id: str) -> str:
 
 
 def store_in_db(user_id: str, username: str, midi_url: str) -> None:
-    """Store MIDI file reference in database."""
+    """Store MIDI file reference in user's personal collection only."""
+    logging.info(f"Attempting to store MIDI in user's personal collection - user_id: {user_id}, username: {username}, midi_url: {midi_url}")
+    
     if not username:
         logging.error("Username not found for user_id: %s", user_id)
         return
 
+    # Store in user's personal collection only (not public browse)
     data = {
         "user_id": user_id,
         "username": username,
         "midi_url": midi_url,
         "created_at": datetime.utcnow(),
+        "is_public": False  # Mark as private by default
     }
 
-    collection.insert_one(data)
-    logging.info("Inserted file by: %s", username)
+    try:
+        # Insert the MIDI document
+        result = collection.insert_one(data)
+        midi_id = result.inserted_id
+        logging.info(f"Successfully inserted MIDI file with ID: {midi_id} to user's personal collection")
+        logging.info("Inserted file by: %s", username)
+        
+        # Update the user's midi_files array
+        user_collection = db["users"]
+        user_id_obj = ObjectId(user_id)
+        
+        # Add the MIDI ID to the user's midi_files array
+        update_result = user_collection.update_one(
+            {"_id": user_id_obj},
+            {"$push": {"midi_files": midi_id}}
+        )
+        
+        if update_result.modified_count > 0:
+            logging.info(f"Successfully updated user {username} with MIDI file ID: {midi_id}")
+        else:
+            logging.warning(f"Failed to update user {username} with MIDI file ID: {midi_id}")
+            
+    except Exception as e:
+        logging.error(f"Error inserting MIDI file into database: {e}")
+        raise
 
 
 # =============================================================================
@@ -416,6 +477,7 @@ def process_data():
         user_id = request.form.get("user_id")
         
         logging.info(f"Processing audio file: {file.filename}, content_type: {file.content_type}")
+        logging.info(f"User ID received: {user_id} (type: {type(user_id)})")
 
         # Check MIME type
         if file.content_type != "audio/webm":
@@ -483,7 +545,20 @@ def process_data():
         # Store in database if user is logged in
         if user_id:
             logging.info(f"Storing MIDI in database for user: {user_id}")
-            store_in_db(user_id, find_username(user_id), midi_url)
+            username = find_username(user_id)
+            logging.info(f"Found username: {username}")
+            
+            if username:
+                try:
+                    store_in_db(user_id, username, midi_url)
+                    logging.info(f"Successfully stored MIDI for user {username}")
+                except Exception as e:
+                    logging.error(f"Failed to store MIDI in database: {e}")
+                    # Continue processing even if database storage fails
+            else:
+                logging.warning(f"Could not find username for user_id: {user_id}")
+        else:
+            logging.info("No user_id provided, skipping database storage")
 
         logging.info(f"Successfully processed audio, MIDI URL: {midi_url}")
         return jsonify({"midi_url": midi_url})

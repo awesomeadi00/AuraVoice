@@ -266,6 +266,7 @@ function uploadMidi() {
 
   if (!midiSrc) {
     console.error("No MIDI source to upload");
+    showNotification("No MIDI file to upload. Please record something first.", "error");
     return;
   }
 
@@ -286,7 +287,7 @@ function uploadMidi() {
         showNotification("Error uploading MIDI: " + data.error, "error");
       } else {
         console.log("MIDI file uploaded successfully:", data.message);
-        showNotification("MIDI file uploaded successfully!", "success");
+        showNotification("MIDI file uploaded successfully to browse area!", "success");
       }
     })
     .catch((error) => {

@@ -75,7 +75,8 @@ def index():
 def browse():
     """Renders the browse page"""
     midi_collection = database["midis"]
-    midi_posts = midi_collection.find({}).sort("created_at", -1)
+    # Only show public MIDI files (those uploaded to browse area)
+    midi_posts = midi_collection.find({"is_public": True}).sort("created_at", -1)
     return render_template("browse.html", midi_posts=list(midi_posts))
 
 
@@ -130,8 +131,12 @@ def process_audio():
                 audio_file.content_type or 'audio/webm'  # Fallback to audio/webm if None
             )
         }
-        data = {'user_id': request.form.get('user_id', '')}
         
+        # Get user_id from session if user is logged in, otherwise from form data
+        user_id = session.get('user_id', request.form.get('user_id', ''))
+        data = {'user_id': user_id}
+        
+        app.logger.info(f"User ID for processing: {user_id}")
         app.logger.info(f"Sending to ML client - filename: {files['audio'][0]}, content_type: {files['audio'][2]}")
         
         # Make request to ML client with increased timeout for audio processing
@@ -174,7 +179,7 @@ def proxy_midi(filename):
 
 @app.route("/upload-midi", methods=["POST"])
 def upload_midi():
-    """Handles uploading midi to the database."""
+    """Handles uploading midi to the public browse area."""
     if "user_id" not in session:
         app.logger.warning("User not logged in")
         return jsonify({"error": "User not logged in"}), 401
@@ -200,17 +205,30 @@ def upload_midi():
     # Format the proxy URL for browser access
     proxy_url = f"http://localhost:5001/proxy-midi/{filename}"
 
-    # Save the proxy URL with user details
+    # Check if this MIDI file already exists in the database
     midi_collection = database["midis"]
-    midi_data = {
-        "user_id": user_id,
-        "username": user["username"],
-        "midi_url": proxy_url,
-        "created_at": datetime.utcnow(),
-    }
-    midi_collection.insert_one(midi_data)
+    existing_midi = midi_collection.find_one({"midi_url": proxy_url})
+    
+    if existing_midi:
+        # If it exists, just make it public
+        midi_collection.update_one(
+            {"_id": existing_midi["_id"]},
+            {"$set": {"is_public": True}}
+        )
+        app.logger.info(f"Made existing MIDI file public: {filename}")
+    else:
+        # If it doesn't exist, create a new public entry
+        midi_data = {
+            "user_id": user_id,
+            "username": user["username"],
+            "midi_url": proxy_url,
+            "created_at": datetime.utcnow(),
+            "is_public": True
+        }
+        midi_collection.insert_one(midi_data)
+        app.logger.info(f"Created new public MIDI file: {filename}")
 
-    return jsonify({"message": "MIDI URL uploaded successfully"}), 200
+    return jsonify({"message": "MIDI file uploaded successfully to browse area"}), 200
 
 
 # Allowing users to see their own midis here
@@ -218,28 +236,37 @@ def upload_midi():
 def mymidi():
     """Renders the mymidi page"""
     if "user_id" in session:
-        midi_collection = database["midis"]
-
-        # Retrieve user_id from session
+        # Get user information
         user_id = session["user_id"]
+        user_collection = database["users"]
+        midi_collection = database["midis"]
         
         # Debug logging
         app.logger.info(f"Session user_id: {user_id}")
-        app.logger.info(f"Session user_id type: {type(user_id)}")
         
-        # Find the MIDI files belonging to the user
-        user_posts = midi_collection.find({"user_id": user_id}).sort("created_at", -1)
+        # Find the user document
+        user = user_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            app.logger.error(f"User not found for user_id: {user_id}")
+            return render_template("login.html")
         
-        # Debug: Check what's in the database
-        all_midis = list(midi_collection.find())
-        app.logger.info(f"Total MIDI files in database: {len(all_midis)}")
-        for midi in all_midis:
-            app.logger.info(f"MIDI user_id: {midi.get('user_id')}, type: {type(midi.get('user_id'))}")
+        # Get the user's MIDI file IDs
+        midi_file_ids = user.get("midi_files", [])
+        app.logger.info(f"User {user['username']} has {len(midi_file_ids)} MIDI files")
         
-        user_posts_list = list(user_posts)
-        app.logger.info(f"Found {len(user_posts_list)} MIDI files for user {user_id}")
+        # Find the actual MIDI documents
+        user_posts = []
+        for midi_id in midi_file_ids:
+            midi_doc = midi_collection.find_one({"_id": ObjectId(midi_id)})
+            if midi_doc:
+                user_posts.append(midi_doc)
         
-        return render_template("mymidi.html", user_posts=user_posts_list)
+        # Sort by creation date (newest first)
+        user_posts.sort(key=lambda x: x.get("created_at", datetime.min), reverse=True)
+        
+        app.logger.info(f"Found {len(user_posts)} MIDI files for user {user['username']}")
+        
+        return render_template("mymidi.html", user_posts=user_posts)
     return render_template("login.html")
 
 
