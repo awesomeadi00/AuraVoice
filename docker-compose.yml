@@ -1,23 +1,23 @@
-version: "3"
 services:
   web-app:
     build:
       context: ./web_app
-      dockerfile: dockerfile.web
-    image: angstisdocker/web-app:latest
-    container_name: web-app-container
+      dockerfile: Dockerfile
+    image: awesomeadi00/auravoice-webapp:latest
+    container_name: auravoice-webapp-container
     ports:
       - "5001:5000"
-  ml-client:
+  client:
     build:
       context: ./machine_learning_client
-      dockerfile: dockerfile.ml
-    image: angstisdocker/ml-client:latest
-    container_name: ml-client-container
+      dockerfile: Dockerfile
+    image: awesomeadi00/auravoice-client:latest
+    container_name: auravoice-client-container
     ports:
       - "5002:5002"
-  db:
-    image: mongo:4.0-xenial
+  database:
+    image: mongo:4.2
+    container_name: auravoice-database-container
     ports:
       - "27017:27017"
     volumes:

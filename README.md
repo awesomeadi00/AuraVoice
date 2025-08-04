@@ -1,24 +1,9 @@
-![Workflow Status](https://github.com/software-students-fall2023/4-containerized-app-exercise-wacotacotruck/actions/workflows/lint.yml/badge.svg?branch=main&kill_cache=1)
-![Workflow Status](https://github.com/software-students-fall2023/4-containerized-app-exercise-wacotacotruck/actions/workflows/frontend.yml/badge.svg?branch=main&kill_cache=1)
-![Workflow Status](https://github.com/software-students-fall2023/4-containerized-app-exercise-wacotacotruck/actions/workflows/backend.yml/badge.svg?branch=main&kill_cache=1)
-![Workflow Status](https://github.com/software-students-fall2023/4-containerized-app-exercise-wacotacotruck/actions/workflows/ci-cd.yml/badge.svg?branch=main&kill_cache=1)
 
-# VocalMIDI
+# AuraVoice
 
-Build a containerized app that uses machine learning. See [instructions](./instructions.md) for details.
+AuraVoice is a web application that utilizes the power of machine learning to convert your voice into midi. With just a few clicks all you have to do is hum, sing or speak into your microphone and it will automatically convert your voice into a musical composition to which you can use in your own digital audio workstations, songs, or any application you'd like! 
 
-## [Live Demo](http://159.65.44.240:5001/)
-If using Google Chrome, follow these steps to address microphone access issues in the live demo:
-
-1. **Open Chrome Flags**:
-   - Type `chrome://flags/#unsafely-treat-insecure-origin-as-secure` in the address bar and press Enter.
-
-2. **Enable Insecure Origins**:
-   - Add `http://159.65.44.240:5001/` in the "Insecure origins treated as secure" section.
-   - Change dropdown to 'Enabled'.
-
-3. **Relaunch Chrome**:
-   - Click 'Relaunch' to apply changes.
+AuraVoice is also a social media platform in which you can share your creations and also browse through other users MIDI files! AuraVoice is able to do this through the [CREPE Pitch Tracker CNN Deep Neural Network Model](https://github.com/marl/crepe). Feel free to check out their repository for more details!  
 
 ## Team Members: 
 - [Aditya Pandhare](https://github.com/awesomeadi00)
@@ -26,41 +11,49 @@ If using Google Chrome, follow these steps to address microphone access issues i
 - [Baani Pasrija](https://github.com/zeepxnflrp)
 - [Zander Chen](https://github.com/ccczy-czy)
 
-## Description:
 
-VocalMIDI is a web application that utilizes the power of machine learning to convert your voice into midi. With just a few clicks all you have to do is hum, sing or speak into your microphone and it will automatically convert your voice into a musical composition to which you can use in your own Digital Audio Workstations, Songs, or whatever application you'd like! You can browse through other users midi files and search through whatever sounds great to your ears!
+## Setup from scratch: 
 
-## Setup: 
-
-### Prerequisites: 
+### Docker Installation 
 
 Before you start the steps below, make sure you have the following downloaded on your system: 
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Docker Compose](https://docs.docker.com/compose/install/)
 
-**Download AWS Command Line Interface:**
+### AWS Configuration Setup
 
  1. Go to [AWS website](https://aws.amazon.com/cli/) and download AWS Command Line Interface based on your operating system.
  2. Go to terminal and type the following line: `aws configure`
  3. Follow the prompt and provide values:
  ```
- AWS Access Key ID: <Value for variable AWS_ACCESS_KEY_ID in provided .env file>
- AWS Secret Access Key: <Value for variable AWS_SECRET_ACCESS_KEY in provided .env file>
+ AWS Access Key ID: <AWS_ACCESS_KEY_ID in provided .env file>
+
+ AWS Secret Access Key: <AWS_SECRET_ACCESS_KEY in provided .env file>
+ 
  Default region name: us-east-1
+ 
  Default output format: json
  ```
 
-### Running the Application:
+Furthermore if you are starting this project from scratch, you can visit the [AWS Console](https://aws.amazon.com/free/?trk=3b81af00-66e9-4dfa-8d40-13976c5ec632&sc_channel=ps&ef_id=Cj0KCQjwtMHEBhC-ARIsABua5iSj6tpYHEFKOtPW8c94SQyLZDVaqc2A-oj4io059T6aJ08Wr008fLoaArKiEALw_wcB:G:s&s_kwcid=AL!4422!3!733904860063!e!!g!!aws%20console!22269309085!176152675838&gad_campaignid=22269309085&gbraid=0AAAAADjHtp9QrWUlNJI3b6UfDIOW86Hcf&gclid=Cj0KCQjwtMHEBhC-ARIsABua5iSj6tpYHEFKOtPW8c94SQyLZDVaqc2A-oj4io059T6aJ08Wr008fLoaArKiEALw_wcB) with your account and visit the S3 service and create a Bucket. 
+
+You can also get your AWS Access Key ID and AWS Secret Access Key through the following steps:  
+- From AWS Console 
+- Click on your account on the top left
+- Security Credentials 
+- Create Access Key
+
+## Running the Application:
 
 1. Clone the repository:
 ```
-git clone https://github.com/software-students-fall2023/4-containerized-app-exercise-wacotacotruck.git
+git clone https://github.com/awesomeadi00/AuraVoice.git
 ```
 
 2. Navigate to the project directory: 
 ```
-cd 4-containerized-app-exercise-wacotacotruck
+cd AuraVoice
 ```
 
 3. Create .env files inside the `machine_learning_client/` folder and `web_app/` folder each (Variables should be provided to you):
@@ -70,19 +63,23 @@ cd 4-containerized-app-exercise-wacotacotruck
 AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY
 S3_BUCKET_NAME
+```
 
-
+```
 .env for web_app/ folder:
 
-MONGO_DBNAME
-MONGO_URI
-FLASK_APP
-GITHUB_SECRET
-GITHUB_REPO
-APP_SECRET_KEY
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-S3_BUCKET_NAME
+# MongoDB Configuration (Local Container - auto-configured)
+MONGO_URI=mongodb://admin:password123@mongodb:27017/auravoice?authSource=admin
+MONGO_DBNAME=auravoice
+
+# Flask Configuration
+FLASK_APP=app.py
+APP_SECRET_KEY=your-secret-key-here
+
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID=your-aws-access-key
+AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+S3_BUCKET_NAME=your-s3-bucket-name
 ```
 
 4. Build docker images and run the containers:
@@ -98,4 +95,28 @@ http://localhost:5001
 6. To stop the containers, run the command: 
 ```
 docker-compose stop
+```
+
+### Additional Commands:
+
+**View MongoDB logs:**
+```bash
+docker logs mongodb-container
+```
+
+**Access MongoDB shell:**
+```bash
+docker exec -it mongodb-container mongosh --username admin --password password123 --authenticationDatabase admin
+```
+
+**Create database backup:**
+```bash
+chmod +x backup-mongodb.sh
+./backup-mongodb.sh
+```
+
+**Reset database (WARNING: This will delete all data):**
+```bash
+docker-compose down -v
+docker-compose up --build -d
 ```

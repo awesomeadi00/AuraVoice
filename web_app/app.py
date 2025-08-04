@@ -1,15 +1,11 @@
-"""Web-app."""
+"""This is the web app for AuraVoice, this handles the backend of the application"""
 import os
-
 import logging
 from datetime import datetime
 from flask import Flask, url_for, redirect, render_template, session, request, jsonify
-
-# import requests
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
-
 import boto3
 from bson import ObjectId
 from botocore.exceptions import ClientError
@@ -18,15 +14,12 @@ from flask_session import Session
 # Initializes Flask application and loads the .env file from the MongoDB Atlas Database
 app = Flask(__name__)
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
 
-# Initialize S3 client - commented out for now due to pylint
+# Initialize S3 client
 aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
 aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
 s3_bucket_name = os.getenv("S3_BUCKET_NAME")
-
-host = os.getenv("HOST", "localhost")
 
 s3 = boto3.client(
     "s3",
@@ -42,25 +35,29 @@ app.secret_key = os.getenv("APP_SECRET_KEY")
 app.config["SESSION_TYPE"] = "filesystem"
 sess.init_app(app)
 
-# Establish a database connection with the MONGO_URI (MongoDB Atlas connection)
-client_atlas = MongoClient(os.getenv("MONGO_URI"))
-
-# Checks if the connection has been made, else make an error printout
-try:
-    client_atlas.admin.command("ping")
-    database_atlas = client_atlas[os.getenv("MONGO_DBNAME")]
-    print("* Connected to MongoDB!")
-except ConnectionError as err:
-    print('* "Failed to connect to MongoDB at', os.getenv("MONGO_URI"))
-    print("Database connection error:", err)
-
-# except Exception as err:
-#     print('* "Failed to connect to MongoDB at', os.getenv("MONGO_URI"))
-#     print("Database connection error:", err)
-
 # Connect to MongoDB
-client = MongoClient("db", 27017)
-database = client["database"]
+try:
+    client = MongoClient("database", 27017)
+    database = client["auravoice"]
+    
+    # Ensure collections exist (MongoDB creates them automatically, but this makes it explicit)
+    if "users" not in database.list_collection_names():
+        database.create_collection("users")
+        logging.info("Created 'users' collection")
+    
+    if "midis" not in database.list_collection_names():
+        database.create_collection("midis")
+        logging.info("Created 'midis' collection")
+    
+    
+    logging.info("Database connection established successfully")
+    logging.info(f"Available collections: {database.list_collection_names()}")
+    print("* Connected to MongoDB!")
+    
+except Exception as e:
+    logging.error(f"Database connection error: {e}")
+    print("* Failed to connect to MongoDB at database:27017")
+    print(f"Database connection error: {e}")
 
 
 # Routes
@@ -76,7 +73,7 @@ def index():
 @app.route("/browse")
 def browse():
     """Renders the browse page"""
-    midi_collection = database_atlas["midis"]
+    midi_collection = database["midis"]
     midi_posts = midi_collection.find({}).sort("created_at", -1)
     return render_template("browse.html", midi_posts=list(midi_posts))
 
@@ -128,7 +125,7 @@ def upload_midi():
     except TypeError:
         return jsonify({"error": "Invalid User ID"}), 400
 
-    user = database_atlas.users.find_one({"_id": user_id_obj})
+    user = database.users.find_one({"_id": user_id_obj})
 
     if not user:
         return jsonify({"error": "User not found"}), 404
@@ -137,7 +134,7 @@ def upload_midi():
     s3_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{filename}"
 
     # Save the S3 URL with user details
-    midi_collection = database_atlas["midis"]
+    midi_collection = database["midis"]
     midi_data = {
         "user_id": user_id,
         "username": user["username"],
@@ -203,11 +200,11 @@ def signup():
         errors = []
 
         # This checks if there is already a user that has this exact username
-        if database_atlas.users.find_one({"username": username}):
+        if database.users.find_one({"username": username}):
             errors.append("Username already exists!")
 
         # This checks if there is already a user that has this exact email
-        if database_atlas.users.find_one({"email": email}):
+        if database.users.find_one({"email": email}):
             errors.append("Email already used, try another or try logging in!")
 
         # This checks if the password is in between 8-20 characters
@@ -234,7 +231,7 @@ def signup():
         password_hash = generate_password_hash(password)
 
         # Here we insert their account details to the database
-        user_collection = database_atlas["users"]
+        user_collection = database["users"]
         user_collection.insert_one(
             {
                 "username": username,
@@ -277,7 +274,7 @@ def login():
 #         errors = []
 
 #         # Once inputted their username and password, check the database for existing users
-#         user = database_atlas.users.find_one({"username": username})
+#         user = database.users.find_one({"username": username})
 
 #         # We provide the _id attribute of the user to the user_id in the session
 #         if user and check_password_hash(user["password"], password):
@@ -303,7 +300,7 @@ def login_auth():
         errors = []
 
         # cleanup()
-        user_atlas = database_atlas.users.find_one({"username": username})
+        user_atlas = database.users.find_one({"username": username})
 
         if user_atlas and check_password_hash(user_atlas["password"], password):
             session["user_id"] = str(user_atlas["_id"])
@@ -322,7 +319,7 @@ def login_auth():
             )
 
             # Fetch and copy MIDI data
-            midis_atlas = database_atlas["midis"].find(
+            midis_atlas = database["midis"].find(
                 {"user_id": str(user_atlas["_id"])}
             )
             local_midi_collection = database["midis"]
@@ -350,7 +347,7 @@ def forgot_password():
         confirm_password = request.form["confirm_password"]
         email = request.form["email"]
         errors = []
-        user = database_atlas.users.find_one({"email": email, "username": username})
+        user = database.users.find_one({"email": email, "username": username})
 
         if not user:
             errors.append("Invalid username or email!")

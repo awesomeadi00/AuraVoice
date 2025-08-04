@@ -4,35 +4,44 @@ import os
 import logging
 import uuid
 from datetime import datetime
-import librosa
-from dotenv import load_dotenv
+from typing import List, Dict, Any, Optional
 
-# import io (commented out because import is unused currently)
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import crepe
-import pretty_midi
+# Audio processing libraries
+import librosa
 import soundfile as sf
 import numpy as np
+
+# Web framework
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+# Machine learning and MIDI
+import crepe
+import pretty_midi
+
+# AWS and database
 import boto3
 from botocore.exceptions import NoCredentialsError
 from pymongo import MongoClient
 from bson import ObjectId
-from werkzeug.exceptions import BadRequest
 
+# Utilities
+from dotenv import load_dotenv
+
+# =============================================================================
+# INITIALIZATION
+# =============================================================================
+
+# Initialize Flask app
 app = Flask(__name__)
-
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
-
 CORS(app)
 
+# AWS S3 Configuration
 aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
 aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
 s3_bucket_name = os.getenv("S3_BUCKET_NAME")
-
-host = os.getenv("HOST", "localhost")
 
 s3 = boto3.client(
     "s3",
@@ -40,23 +49,19 @@ s3 = boto3.client(
     aws_secret_access_key=aws_secret_access_key,
 )
 
-# Connect to MongoDB
-client = MongoClient("db", 27017)
-db = client["database"]
+# MongoDB Configuration
+client = MongoClient("database", 27017)
+db = client["auravoice"]
 collection = db["midis"]
 
+# Container configuration
+HOST = "client"
 
-def frequency_to_note_name(frequency):
-    """Convert a frequency in Hertz to a musical note name."""
-    if frequency <= 0:
-        return None
-    frequency = float(frequency)
-    note_number = pretty_midi.hz_to_note_number(frequency)
+# =============================================================================
+# AUDIO PROCESSING FUNCTIONS
+# =============================================================================
 
-    return pretty_midi.note_number_to_name(int(note_number))
-
-
-def convert_webm_to_wav(webm_file, wav_file):
+def convert_webm_to_wav(webm_file: str, wav_file: str) -> None:
     """Convert WebM audio file to WAV format."""
     result = subprocess.run(
         ["ffmpeg", "-i", webm_file, wav_file],
@@ -69,7 +74,42 @@ def convert_webm_to_wav(webm_file, wav_file):
         raise ValueError("Error converting WebM to WAV")
 
 
-def process_audio_chunks(audio, sr):
+def write_audio_to_file(file_name: str, audio_stream) -> None:
+    """Write audio stream to file."""
+    with open(file_name, "wb") as file:
+        file.write(audio_stream.read())
+
+
+def clean_up_files(webm_file: str, wav_file: str) -> None:
+    """Remove temporary audio files."""
+    os.remove(webm_file)
+    os.remove(wav_file)
+
+
+def calculate_amplitude_envelope(y: np.ndarray, frame_size: int = 1024, hop_length: int = 512) -> np.ndarray:
+    """Calculate amplitude envelope of an audio signal using RMS."""
+    amplitude_envelope = []
+    for i in range(0, len(y), hop_length):
+        frame = y[i : i + frame_size]
+        rms = np.sqrt(np.mean(frame**2))
+        amplitude_envelope.append(rms)
+    return np.array(amplitude_envelope)
+
+
+# =============================================================================
+# PITCH DETECTION AND NOTE PROCESSING
+# =============================================================================
+
+def frequency_to_note_name(frequency: float) -> Optional[str]:
+    """Convert a frequency in Hertz to a musical note name."""
+    if frequency <= 0:
+        return None
+    frequency = float(frequency)
+    note_number = pretty_midi.hz_to_note_number(frequency)
+    return pretty_midi.note_number_to_name(int(note_number))
+
+
+def process_audio_chunks(audio: np.ndarray, sr: int) -> List[Dict[str, Any]]:
     """Process audio data in chunks and return notes data."""
     confidence_threshold = 0.74
     chunk_size = 1024 * 10
@@ -82,197 +122,24 @@ def process_audio_chunks(audio, sr):
         for t, f, c in zip(time, frequency, confidence):
             if c >= confidence_threshold:
                 note_name = frequency_to_note_name(f)
-                notes_data.append(
-                    {
+                if note_name:
+                    notes_data.append({
                         "time": float(t),
                         "note": note_name,
                         "confidence": round(float(c), 2),
-                    }
-                )
+                    })
+    
     print(notes_data)
     return notes_data
 
 
-def clean_up_files(webm_file, wav_file):
-    """Remove temporary audio files."""
-    os.remove(webm_file)
-    os.remove(wav_file)
-
-
-def write_audio_to_file(file_name, audio_stream):
-    """function to write audio to file"""
-    with open(file_name, "wb") as file:
-        file.write(audio_stream.read())
-
-
-def sort_notes_data(notes_data):
-    """function to sort notes data"""
+def sort_notes_data(notes_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Sort notes data by time."""
     return sorted(notes_data, key=lambda x: x["time"])
 
 
-def process_notes(notes_data):
-    """function to process notes"""
-    smoothed_notes = smooth_pitch_data(notes_data)
-
-    return filter_and_combine_notes(smoothed_notes)
-
-
-def generate_midi_url(filtrd_comb_notes, onsets, drtns, tempo):
-    """function to generate midi url"""
-    midi_filename = create_midi(
-        filtrd_comb_notes, onsets, drtns, tempo, output_file="output.mid"
-    )
-    # drtns = durations; had to edit because of pylint 0_0
-    midi_url = f"http://{host}:5002/static/{midi_filename}"
-
-    return midi_url
-
-
-def create_and_store_midi_in_s3(filtrd_comb_notes, onsets, drtns, tempo):
-    """Function to generate midi url after uploading to AWS S3."""
-    unique_id = str(uuid.uuid4())
-    midi_filename = f"output_{unique_id}.mid"
-    create_midi(filtrd_comb_notes, onsets, drtns, tempo, output_file=midi_filename)
-
-    try:
-        local_midi_file_path = f"static/{midi_filename}"
-
-        s3.upload_file(local_midi_file_path, s3_bucket_name, midi_filename)
-
-        midi_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{midi_filename}"
-        if os.path.exists(local_midi_file_path):
-            os.remove(local_midi_file_path)
-            print(f"Successfully deleted local file: {local_midi_file_path}")
-        else:
-            print(f"Local file not found for deletion: {local_midi_file_path}")
-
-        return midi_url
-    except FileNotFoundError:
-        print("The MIDI file was not found")
-        raise
-    except NoCredentialsError:
-        print("AWS credentials not available")
-        raise
-
-
-def store_in_db(user_id, username, midi_url):
-    """Function to save to the database."""
-    if not username:
-        logging.error("Username not found for user_id: %s", user_id)
-        return
-
-    # logging.info("MIDI URL added:", {midi_url})
-
-    # Adding a created_at field with the current datetime
-    data = {
-        "user_id": user_id,
-        "username": username,
-        "midi_url": midi_url,
-        "created_at": datetime.utcnow(),  # Store the current UTC time
-    }
-
-    collection.insert_one(data)
-    logging.info("Inserted file by: %s", username)
-
-
-@app.route("/process", methods=["POST"])
-def process_data():
-    """Route to process the data."""
-    try:
-        if "audio" not in request.files:
-            raise ValueError("No audio file found in the request")
-        file = request.files["audio"]
-
-        # Retrieve user ID from the form data
-        if file:
-            try:
-                user_id = request.form.get("user_id")
-            except BadRequest as e:
-                logging.info("Bad request error: %s", e)
-
-        # Check MIME type
-        if file.content_type != "audio/webm":
-            return jsonify({"error": "Unsupported Media Type"}), 415
-
-        webm_file = "temp_recording.webm"
-        wav_file = "temp_recording.wav"
-
-        # Write audio to file and convert formats
-        write_audio_to_file(webm_file, request.files["audio"])
-        convert_webm_to_wav(webm_file, wav_file)
-
-        # Process audio chunks to get notes data
-        audio, sr = sf.read(wav_file)
-        notes_data = process_audio_chunks(audio, sr)
-        notes_data_sorted = sort_notes_data(notes_data)
-        logging.info("Chunked notes data for jsonify: %s", notes_data_sorted)
-
-        # Further processing on notes data
-        # filtered_and_combined_notes = process_notes(notes_data)
-
-        # Load the audio file first to get y and sr
-        y, sr = librosa.load(wav_file, sr=44100)
-
-        # Detect onsets
-        onsets = detect_note_onsets(wav_file)
-
-        # Estimate note durations
-        durations = estimate_note_durations(onsets, y, sr=44100)
-
-        # Estimate tempo
-        tempo = estimate_tempo(wav_file)
-
-        # Clean up temporary files
-        clean_up_files(webm_file, wav_file)
-
-        # midi_url = generate_midi_url(
-        #     filtered_and_combined_notes, onsets, durations, tempo
-        # )
-
-        midi_url = create_and_store_midi_in_s3(
-            process_notes(notes_data), onsets, durations, tempo
-        )
-
-        # logging.info("MIDI URL generated:", {midi_url})
-
-        if midi_url is None:
-            app.logger.error("Failed to generate or store MIDI file in S3")
-            return jsonify({"error": "MIDI generation failed"}), 500
-
-        if user_id:
-            store_in_db(user_id, find_username(user_id), midi_url)
-
-        return jsonify({"midi_url": midi_url})
-        # store file in database, grab from there and show.
-
-    except IOError as e:
-        app.logger.error("IO error occurred: %s", e)
-        return jsonify({"error": str(e)}), 500
-    except ValueError as e:
-        app.logger.error("Value error occurred: %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-def find_username(user_id):
-    """Function to find username by user id."""
-    try:
-        user_id_obj = ObjectId(user_id)
-    except TypeError as e:
-        logging.error("Error converting user_id to ObjectId: %s", e)
-        return ""
-
-    user_collection = db["users"]
-    user_doc = user_collection.find_one({"_id": user_id_obj})
-    if user_doc:
-        username = user_doc.get("username")
-        logging.info("Found username.")
-        return username
-    logging.error("User not found for user_id: %s", user_id)
-    return ""
-
-
-def smooth_pitch_data(notes_data, window_size=5):
-    """smoothing pitch data."""
+def smooth_pitch_data(notes_data: List[Dict[str, Any]], window_size: int = 5) -> List[Dict[str, Any]]:
+    """Smooth pitch data using a sliding window approach."""
     smoothed_data = []
     for i in range(len(notes_data)):
         start = max(i - window_size // 2, 0)
@@ -289,78 +156,60 @@ def smooth_pitch_data(notes_data, window_size=5):
     return smoothed_data
 
 
-def filter_and_combine_notes(notes_data):
-    """function to filter and combine notes."""
+def filter_and_combine_notes(notes_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filter and combine consecutive notes of the same type."""
     filtered_notes = []
     last_note = None
-    # last_note_start_time = None
 
-    # Correcting the enumeration here
-    # for index, note in enumerate(notes_data):
     for note in notes_data:
         if last_note is not None and note["note"] != last_note:
-            # end_time = max(note["time"], last_note_start_time + minimum_note_duration)
-            filtered_notes.append(
-                {
-                    "note": last_note,
-                    # "start_time": last_note_start_time,
-                    # "end_time": end_time,
-                }
-            )
+            filtered_notes.append({"note": last_note})
             last_note = note["note"]
-            # last_note_start_time = note["time"]
         elif last_note is None:
             last_note = note["note"]
-            # last_note_start_time = note["time"]
 
     if last_note is not None:
-        # end_time = max(
-        #    notes_data[-1]["time"], last_note_start_time + minimum_note_duration
-        # )
-        filtered_notes.append(
-            {
-                "note": last_note,
-                # "start_time": last_note_start_time,
-                # "end_time": end_time,
-            }
-        )
+        filtered_notes.append({"note": last_note})
 
     logging.info("Filtered notes: %s", filtered_notes)
     return filtered_notes
 
 
-def detect_note_onsets(audio_file):
-    """
-    Detect when notes begin or onset.
-    """
-    # y, sr = librosa.load(audio_file, sr=44100)
+def process_notes(notes_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Process notes through smoothing and filtering."""
+    smoothed_notes = smooth_pitch_data(notes_data)
+    return filter_and_combine_notes(smoothed_notes)
+
+
+# =============================================================================
+# TEMPO AND TIMING ANALYSIS
+# =============================================================================
+
+def detect_note_onsets(audio_file: str) -> np.ndarray:
+    """Detect when notes begin (onsets)."""
     y, _ = librosa.load(audio_file, sr=44100)
     onsets = librosa.onset.onset_detect(y=y, sr=44100, units="time")
-    logging.info("onsets: %s", onsets)  # Lazy formatting used here
+    logging.info("onsets: %s", onsets)
     return onsets
 
 
-def estimate_note_durations(onsets, y, sr=44100, threshold=0.025):
-    """
-    Estimate note durations using onsets and amplitude envelope.
-    """
+def estimate_note_durations(onsets: np.ndarray, y: np.ndarray, sr: int = 44100, threshold: float = 0.025) -> List[float]:
+    """Estimate note durations using onsets and amplitude envelope."""
     amp_env = calculate_amplitude_envelope(y, sr)
     min_duration = 0.05
     durations = []
 
-    # Iterate over onsets using enumerate
-    for i, onset in enumerate(onsets[:-1]):  # Exclude the last onset for now
+    # Process all onsets except the last one
+    for i, onset in enumerate(onsets[:-1]):
         onset_sample = int(onset * sr)
         next_onset_sample = int(onsets[i + 1] * sr)
 
         end_sample = next_onset_sample
         for j in range(onset_sample, next_onset_sample, 512):
-            # 512 is the hop length used in envelope calculation
             if amp_env[j // 512] < threshold:
                 end_sample = j
                 break
 
-        # Calculate duration with a minimum duration constraint
         duration = max((end_sample - onset_sample) / sr, min_duration)
         durations.append(duration)
 
@@ -380,76 +229,208 @@ def estimate_note_durations(onsets, y, sr=44100, threshold=0.025):
     return durations
 
 
-def estimate_tempo(audio_file):
-    """
-    Estimating tempo for better time mapping
-    """
+def estimate_tempo(audio_file: str) -> float:
+    """Estimate tempo for better time mapping."""
     y, sr = librosa.load(audio_file, sr=44100)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-
     logging.info("tempo: %s", tempo)
     return tempo
 
 
-def calculate_amplitude_envelope(y, frame_size=1024, hop_length=512):
-    """
-    Calculate a smoother amplitude envelope of an audio signal using RMS.
-    """
-    amplitude_envelope = []
-    for i in range(0, len(y), hop_length):
-        frame = y[i : i + frame_size]
-        rms = np.sqrt(np.mean(frame**2))
-        amplitude_envelope.append(rms)
-    return np.array(amplitude_envelope)
+# =============================================================================
+# MIDI GENERATION
+# =============================================================================
 
-
-def create_midi(filtered_notes, onsets, durations, tempo, output_file="output.mid"):
-    """
-    Creating midi file using all the information.
-    """
-    logging.info("Received notes for MIDI creation: %s", filtered_notes)
-    logging.info("Starting to create MIDI file.")
-    if tempo <= 0:
-        logging.warning("Invalid tempo detected. Setting default tempo.")
-        tempo = 120
-    static_dir = os.path.join(app.root_path, "static")
-    if not os.path.exists(static_dir):
-        os.makedirs(static_dir)
-    midi_file_path = os.path.join(static_dir, output_file)
-    midi_data = pretty_midi.PrettyMIDI(initial_tempo=tempo)
-    instrument = create_midi_instrument(filtered_notes, onsets, durations)
-    midi_data.instruments.append(instrument)
-    midi_data.write(midi_file_path)
-    logging.info("MIDI file written to %s", midi_file_path)
-    return output_file
-
-
-def create_midi_instrument(filtered_notes, onsets, durations):
-    """
-    Create a MIDI instrument and add notes to it.
-    """
+def create_midi_instrument(filtered_notes: List[Dict[str, Any]], onsets: np.ndarray, durations: List[float]) -> pretty_midi.Instrument:
+    """Create a MIDI instrument and add notes to it."""
     instrument_program = pretty_midi.instrument_name_to_program("Acoustic Grand Piano")
     instrument = pretty_midi.Instrument(program=instrument_program)
+    
     for note_info, onset, duration in zip(filtered_notes, onsets, durations):
         logging.info("Adding note: %s", note_info)
         logging.info("Adding onset: %s", str(onset))
         logging.info("Adding duration: %s", str(duration))
 
         note_number = pretty_midi.note_name_to_number(note_info["note"])
-
         logging.info("Note number: %s", note_number)
 
-        # Use onset and duration for start and end times
         start_time = onset
         end_time = start_time + duration
 
-        # Create and append the note
         note = pretty_midi.Note(
             velocity=100, pitch=note_number, start=start_time, end=end_time
         )
         instrument.notes.append(note)
+    
     return instrument
 
+
+def create_midi(filtered_notes: List[Dict[str, Any]], onsets: np.ndarray, durations: List[float], tempo: float, output_file: str = "output.mid") -> str:
+    """Create MIDI file using all the information."""
+    logging.info("Received notes for MIDI creation: %s", filtered_notes)
+    logging.info("Starting to create MIDI file.")
+    
+    if tempo <= 0:
+        logging.warning("Invalid tempo detected. Setting default tempo.")
+        tempo = 120
+    
+    static_dir = os.path.join(app.root_path, "static")
+    if not os.path.exists(static_dir):
+        os.makedirs(static_dir)
+    
+    midi_file_path = os.path.join(static_dir, output_file)
+    midi_data = pretty_midi.PrettyMIDI(initial_tempo=tempo)
+    instrument = create_midi_instrument(filtered_notes, onsets, durations)
+    midi_data.instruments.append(instrument)
+    midi_data.write(midi_file_path)
+    
+    logging.info("MIDI file written to %s", midi_file_path)
+    return output_file
+
+
+def generate_midi_url(filtered_notes: List[Dict[str, Any]], onsets: np.ndarray, durations: List[float], tempo: float) -> str:
+    """Generate MIDI URL for local file."""
+    midi_filename = create_midi(filtered_notes, onsets, durations, tempo, output_file="output.mid")
+    midi_url = f"http://{HOST}:5002/static/{midi_filename}"
+    return midi_url
+
+
+def create_and_store_midi_in_s3(filtered_notes: List[Dict[str, Any]], onsets: np.ndarray, durations: List[float], tempo: float) -> str:
+    """Create MIDI file and upload to AWS S3."""
+    unique_id = str(uuid.uuid4())
+    midi_filename = f"output_{unique_id}.mid"
+    create_midi(filtered_notes, onsets, durations, tempo, output_file=midi_filename)
+
+    try:
+        local_midi_file_path = f"static/{midi_filename}"
+        s3.upload_file(local_midi_file_path, s3_bucket_name, midi_filename)
+
+        midi_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{midi_filename}"
+        
+        if os.path.exists(local_midi_file_path):
+            os.remove(local_midi_file_path)
+            print(f"Successfully deleted local file: {local_midi_file_path}")
+        else:
+            print(f"Local file not found for deletion: {local_midi_file_path}")
+
+        return midi_url
+        
+    except FileNotFoundError:
+        print("The MIDI file was not found")
+        raise
+    except NoCredentialsError:
+        print("AWS credentials not available")
+        raise
+
+
+# =============================================================================
+# DATABASE OPERATIONS
+# =============================================================================
+
+def find_username(user_id: str) -> str:
+    """Find username by user ID."""
+    try:
+        user_id_obj = ObjectId(user_id)
+    except TypeError as e:
+        logging.error("Error converting user_id to ObjectId: %s", e)
+        return ""
+
+    user_collection = db["users"]
+    user_doc = user_collection.find_one({"_id": user_id_obj})
+    
+    if user_doc:
+        username = user_doc.get("username")
+        logging.info("Found username.")
+        return username
+    
+    logging.error("User not found for user_id: %s", user_id)
+    return ""
+
+
+def store_in_db(user_id: str, username: str, midi_url: str) -> None:
+    """Store MIDI file reference in database."""
+    if not username:
+        logging.error("Username not found for user_id: %s", user_id)
+        return
+
+    data = {
+        "user_id": user_id,
+        "username": username,
+        "midi_url": midi_url,
+        "created_at": datetime.utcnow(),
+    }
+
+    collection.insert_one(data)
+    logging.info("Inserted file by: %s", username)
+
+
+# =============================================================================
+# FLASK ROUTES
+# =============================================================================
+
+@app.route("/process", methods=["POST"])
+def process_data():
+    """Main route to process audio data and generate MIDI."""
+    try:
+        # Validate request
+        if "audio" not in request.files:
+            raise ValueError("No audio file found in the request")
+        
+        file = request.files["audio"]
+        user_id = request.form.get("user_id")
+
+        # Check MIME type
+        if file.content_type != "audio/webm":
+            return jsonify({"error": "Unsupported Media Type"}), 415
+
+        # Process audio files
+        webm_file = "temp_recording.webm"
+        wav_file = "temp_recording.wav"
+
+        write_audio_to_file(webm_file, file)
+        convert_webm_to_wav(webm_file, wav_file)
+
+        # Extract notes from audio
+        audio, sr = sf.read(wav_file)
+        notes_data = process_audio_chunks(audio, sr)
+        notes_data_sorted = sort_notes_data(notes_data)
+        logging.info("Chunked notes data for jsonify: %s", notes_data_sorted)
+
+        # Analyze timing and tempo
+        y, sr = librosa.load(wav_file, sr=44100)
+        onsets = detect_note_onsets(wav_file)
+        durations = estimate_note_durations(onsets, y, sr=44100)
+        tempo = estimate_tempo(wav_file)
+
+        # Clean up temporary files
+        clean_up_files(webm_file, wav_file)
+
+        # Generate and store MIDI
+        midi_url = create_and_store_midi_in_s3(
+            process_notes(notes_data), onsets, durations, tempo
+        )
+
+        if midi_url is None:
+            app.logger.error("Failed to generate or store MIDI file in S3")
+            return jsonify({"error": "MIDI generation failed"}), 500
+
+        # Store in database if user is logged in
+        if user_id:
+            store_in_db(user_id, find_username(user_id), midi_url)
+
+        return jsonify({"midi_url": midi_url})
+
+    except IOError as e:
+        app.logger.error("IO error occurred: %s", e)
+        return jsonify({"error": str(e)}), 500
+    except ValueError as e:
+        app.logger.error("Value error occurred: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
+# APPLICATION ENTRY POINT
+# =============================================================================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5002)
