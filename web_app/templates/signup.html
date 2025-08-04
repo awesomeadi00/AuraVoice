@@ -1,45 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>Sing & Sync</title>
+        <title>AuraVoice - Sign Up</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-        <link rel="stylesheet", type="text/css", href="../static/style.css">
+        <link rel="stylesheet", type="text/css", href="../static/style.css?v=6">
         <script src="../static/script.js"></script>
     </head>
 
 {% block container %}
     <div class="content">
-        <h1> Sign Up </h1>
+        <h1>Sign Up</h1>
 
-        <!-- When they complete this form, it will call the signup() function and actuate it from the back-end -->
-        <form method="POST" action="/signup">
-            <label for="username">Username: </label>
-            <input type="text" name="username" id="username" required><br>
-            <label for="email">Email: </label>
-            <input type="email" name="email" id="email" required><br>
-            <label for="password">Password (8-20 characters, with at least one number and one alphabet): </label>
-            <input type="password" name="password" id="password" required><br>
-            <label for="confirm_password">Confirm Password: </label>
-            <input type="password" name="confirm_password" id="confirm_password" required><br>
+        <!-- If there are any errors it makes sure -->
+        {% if errors %}
+            <div class="alert">
+                <ul>
+                    {% for message in errors %}
+                        <li>{{ message }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+
+        <form method="POST" action="{{url_for('signup')}}">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" name="username" id="username" required>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" name="email" id="email" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" name="password" id="password" required>
+            </div>
+
+            <div class="form-group">
+                <label for="confirm_password">Confirm Password</label>
+                <input type="password" name="confirm_password" id="confirm_password" required>
+            </div>
+
             <button type="submit" name="submit" value="Sign Up">Sign Up</button>
         </form>
 
-        <!-- If the users already have an account, they can simply click here and it will link them to the login() function which renders the login.html page -->
-        <p>Already have an account? <a href="/login">Log in</a></p>
+        <p>Already have an account? <a href="{{url_for('login')}}">Login</a></p>
     </div>
-
-    <!-- If there are any errors, it will pop up -->
-    {% if errors %}
-        <div class="alert">
-            <ul>
-                {% for message in errors %}
-                    <li>{{ message }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-    {% endif %}
 {% endblock %}
 
 </html>

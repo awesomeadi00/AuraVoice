@@ -2,20 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Browse MIDIs</title>
+    <title>AuraVoice - My MIDIs</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.58,npm/@magenta/music@1.23.1/es6/core.js,npm/focus-visible@5,npm/html-midi-player@1.5.0"></script>
-    <link rel="stylesheet", type="text/css", href="../static/style.css">
+    <link rel="stylesheet", type="text/css", href="../static/style.css?v=5">
 </head>
 <body>
     <div class="browse-button">
-        <a href="{{ url_for('browse') }}"><button class="button"><i class="material-icons">explore</i></button></a>
+        <a href="{{ url_for('index') }}"><button class="button"><i class="material-icons">home</i></button></a>
     </div>
 
     <div class="mymidi-button">
-        <a href="{{ url_for('index') }}"><button class="button"><i class="material-icons">home</i></button></a>
+        <a href="{{ url_for('browse') }}"><button class="button"><i class="material-icons">explore</i></button></a>
     </div>
 
     <div class="auth-buttons">
@@ -26,27 +26,23 @@
         {% endif %}
     </div>
     <div class="centered-container">
-
-    <h1>Your MIDI Files</h1>
+    <h1>My MIDI Files</h1>
     <div id="midi-posts">
-        {% for post in user_posts %}
-            {% if user_posts %}
-                <div class="post-wrapper">
-                    <div class="midi-post">
-                        <div class="visualizer-container-post" id="midiVisualizer">
-                            <midi-player id="midi-player-{{ loop.index }}" class="hidden-midi-player" src="{{ post.midi_url }}" visualizer="#midi-visualizer-{{ loop.index }}"></midi-player>
-                            <midi-visualizer type="piano-roll" id="midi-visualizer-{{ loop.index }}" class="piano-roll"></midi-visualizer>
-                        </div>
-                        <button class="button" onclick="playPostMidi('midi-player-{{ loop.index }}')" title="play"><i class="material-icons">play_arrow</i></button>
-                        <button class="button" onclick="stopPostMidi('midi-player-{{ loop.index }}')" title="stop"><i class="material-icons">stop</i></button>
-                        <button class="button" title="save" onclick="downloadMidiPost('{{ post.midi_url }}')">
-                            <i class="material-icons">download</i>
-                        </button>
-                    </div>
+        {% for post in midi_posts %}
+        <div class="post-wrapper">
+            <div class="midi-post">
+                <h2>Posted by: {{ post.username }}</h2>
+                <div class="visualizer-container-post" id="midiVisualizer">
+                    <midi-player id="midi-player-{{ loop.index }}" class="hidden-midi-player" src="{{ post.midi_url }}" visualizer="#midi-visualizer-{{ loop.index }}"></midi-player>
+                    <midi-visualizer type="piano-roll" id="midi-visualizer-{{ loop.index }}" class="piano-roll"></midi-visualizer>
                 </div>
-            {% else %}
-                <h1> You have to MIDI files, get to creating!</h1>
-            {% endif %}
+                <button class="button" onclick="playPostMidi('midi-player-{{ loop.index }}')" title="play"><i class="material-icons">play_arrow</i></button>
+                <button class="button" onclick="stopPostMidi('midi-player-{{ loop.index }}')" title="stop"><i class="material-icons">stop</i></button>
+                <button class="button" title="save" onclick="downloadMidiPost('{{ post.midi_url }}')">
+                    <i class="material-icons">download</i>
+                </button>
+            </div>
+        </div>
         {% endfor %}
     </div>
     </div>

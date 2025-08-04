@@ -96,27 +96,3 @@ http://localhost:5001
 ```
 docker-compose stop
 ```
-
-### Additional Commands:
-
-**View MongoDB logs:**
-```bash
-docker logs mongodb-container
-```
-
-**Access MongoDB shell:**
-```bash
-docker exec -it mongodb-container mongosh --username admin --password password123 --authenticationDatabase admin
-```
-
-**Create database backup:**
-```bash
-chmod +x backup-mongodb.sh
-./backup-mongodb.sh
-```
-
-**Reset database (WARNING: This will delete all data):**
-```bash
-docker-compose down -v
-docker-compose up --build -d
-```

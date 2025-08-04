@@ -205,7 +205,7 @@ def signup():
 
         # This checks if there is already a user that has this exact email
         if database.users.find_one({"email": email}):
-            errors.append("Email already used, try another or try logging in!")
+            errors.append("Email already used, try another!")
 
         # This checks if the password is in between 8-20 characters
         if not 8 <= len(password) <= 20:
@@ -366,7 +366,17 @@ def forgot_password():
 
         if errors:
             return render_template("forgot_password.html", errors=errors)
-    return None
+        
+        # If no errors, update the password
+        password_hash = generate_password_hash(password)
+        database.users.update_one(
+            {"email": email, "username": username},
+            {"$set": {"password": password_hash}}
+        )
+        return redirect(url_for("login"))
+    
+    # GET request - render the forgot password template
+    return render_template("forgot_password.html")
 
 
 # Here we have another route, if the user decides to logout,

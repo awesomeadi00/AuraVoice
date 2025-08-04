@@ -1,25 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>Sing & Sync</title>
+        <title>AuraVoice - Login</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-        <link rel="stylesheet", type="text/css", href="../static/style.css">
+        <link rel="stylesheet", type="text/css", href="../static/style.css?v=6">
         <script src="../static/script.js"></script>
     </head>
 
 {% block container %}
     <div class="content">
-        <h1> Login </h1>
+        <h1>Login</h1>
+
+        <!-- If there are any errors it makes sure -->
+        {% if errors %}
+            <div class="alert">
+                <ul>
+                    {% for message in errors %}
+                        <li>{{ message }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
 
         <!-- When they are on the login.html page, it will show this form but when they press submit, it will actuate the login_auth() function from the backend.  -->
         <form method="POST" action="{{url_for('login_auth')}}">
-            <label for="username">Username: </label>
-            <input type="text" name="username" id="username" required><br>
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" name="username" id="username" required>
+            </div>
 
-            <label for="password">Password: </label>
-            <input type="password" name="password" id="password" required><br>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" name="password" id="password" required>
+            </div>
 
             <button type="submit" name="submit" value="Login">Login</button>
         </form>
@@ -28,17 +43,6 @@
         <p>Don't have an account? <a href="{{url_for('signup')}}">Sign Up</a></p>
         <p>Forgot Password? <a href="{{url_for('forgot_password')}}">Reset</a></p>
     </div>
-
-    <!-- If there are any errors it makes sure -->
-    {% if errors %}
-        <div class="alert">
-            <ul>
-                {% for message in errors %}
-                    <li>{{ message }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-    {% endif %}   
 {% endblock %}
 
 </html>
