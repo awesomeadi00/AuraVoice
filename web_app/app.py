@@ -2,7 +2,7 @@
 import os
 import logging
 from datetime import datetime
-from flask import Flask, url_for, redirect, render_template, session, request, jsonify
+from flask import Flask, url_for, redirect, render_template, session, request, jsonify, Response
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
@@ -10,6 +10,7 @@ import boto3
 from bson import ObjectId
 from botocore.exceptions import ClientError
 from flask_session import Session
+import requests
 
 # Initializes Flask application and loads the .env file from the MongoDB Atlas Database
 app = Flask(__name__)
@@ -88,7 +89,7 @@ def cleanup():
 
         s3_files = s3.list_objects_v2(Bucket=s3_bucket_name).get("Contents", [])
         s3_urls = {
-            f"https://{s3_bucket_name}.s3.amazonaws.com/{file['Key']}"
+            f"http://localhost:5001/proxy-midi/{file['Key']}"
             for file in s3_files
         }
 
@@ -103,6 +104,72 @@ def cleanup():
     except ClientError as e:
         logging.error("ClientError during S3 operation: %s", e)
         return str(e)
+
+
+@app.route("/process-audio", methods=["POST"])
+def process_audio():
+    """Proxy route to forward audio processing requests to the ML client."""
+    try:
+        # Forward the request to the ML client
+        ml_client_url = "http://client:5002/process"
+        
+        # Get the audio file and preserve its content type
+        audio_file = request.files['audio']
+        
+        # Debug logging
+        app.logger.info(f"Original file info - filename: {audio_file.filename}, content_type: {audio_file.content_type}")
+        
+        # Read the file content to preserve it
+        file_content = audio_file.read()
+        
+        # Prepare the files with proper content type
+        files = {
+            'audio': (
+                audio_file.filename,
+                file_content,
+                audio_file.content_type or 'audio/webm'  # Fallback to audio/webm if None
+            )
+        }
+        data = {'user_id': request.form.get('user_id', '')}
+        
+        app.logger.info(f"Sending to ML client - filename: {files['audio'][0]}, content_type: {files['audio'][2]}")
+        
+        # Make request to ML client with increased timeout for audio processing
+        response = requests.post(ml_client_url, files=files, data=data, timeout=120)
+        
+        # Return the response from ML client
+        return jsonify(response.json()), response.status_code
+        
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Error communicating with ML client: {e}")
+        return jsonify({"error": "Failed to process audio. Please try again."}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in audio processing: {e}")
+        return jsonify({"error": "An unexpected error occurred."}), 500
+
+
+@app.route("/proxy-midi/<filename>")
+def proxy_midi(filename):
+    """Proxy route to serve MIDI files from S3."""
+    try:
+        # Get the file from S3
+        response = s3.get_object(Bucket=s3_bucket_name, Key=filename)
+        file_content = response['Body'].read()
+        
+        # Return the file with proper headers
+        return Response(
+            file_content,
+            mimetype='audio/midi',
+            headers={
+                'Content-Disposition': f'attachment; filename={filename}',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type'
+            }
+        )
+    except Exception as e:
+        app.logger.error(f"Error proxying MIDI file {filename}: {e}")
+        return jsonify({"error": "File not found"}), 404
 
 
 @app.route("/upload-midi", methods=["POST"])
@@ -130,15 +197,15 @@ def upload_midi():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Format the S3 URL
-    s3_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{filename}"
+    # Format the proxy URL for browser access
+    proxy_url = f"http://localhost:5001/proxy-midi/{filename}"
 
-    # Save the S3 URL with user details
+    # Save the proxy URL with user details
     midi_collection = database["midis"]
     midi_data = {
         "user_id": user_id,
         "username": user["username"],
-        "midi_url": s3_url,
+        "midi_url": proxy_url,
         "created_at": datetime.utcnow(),
     }
     midi_collection.insert_one(midi_data)
@@ -153,14 +220,26 @@ def mymidi():
     if "user_id" in session:
         midi_collection = database["midis"]
 
-        # Retreive user_id from session
+        # Retrieve user_id from session
         user_id = session["user_id"]
-
+        
+        # Debug logging
+        app.logger.info(f"Session user_id: {user_id}")
+        app.logger.info(f"Session user_id type: {type(user_id)}")
+        
         # Find the MIDI files belonging to the user
         user_posts = midi_collection.find({"user_id": user_id}).sort("created_at", -1)
-        # user_id_obj = ObjectId(user_id)
-        # user_posts = midi_collection.find({"user_id": user_id_obj}).sort("created_at", -1)
-        return render_template("mymidi.html", user_posts=list(user_posts))
+        
+        # Debug: Check what's in the database
+        all_midis = list(midi_collection.find())
+        app.logger.info(f"Total MIDI files in database: {len(all_midis)}")
+        for midi in all_midis:
+            app.logger.info(f"MIDI user_id: {midi.get('user_id')}, type: {type(midi.get('user_id'))}")
+        
+        user_posts_list = list(user_posts)
+        app.logger.info(f"Found {len(user_posts_list)} MIDI files for user {user_id}")
+        
+        return render_template("mymidi.html", user_posts=user_posts_list)
     return render_template("login.html")
 
 

@@ -25,27 +25,69 @@
             <a href="{{ url_for('logout') }}"><button class="button" id="logout" title="logout">Log Out</button></a>
         {% endif %}
     </div>
-    <div class="centered-container">
-    <h1>My MIDI Files</h1>
-    <div id="midi-posts">
-        {% for post in midi_posts %}
-        <div class="post-wrapper">
-            <div class="midi-post">
-                <h2>Posted by: {{ post.username }}</h2>
-                <div class="visualizer-container-post" id="midiVisualizer">
-                    <midi-player id="midi-player-{{ loop.index }}" class="hidden-midi-player" src="{{ post.midi_url }}" visualizer="#midi-visualizer-{{ loop.index }}"></midi-player>
-                    <midi-visualizer type="piano-roll" id="midi-visualizer-{{ loop.index }}" class="piano-roll"></midi-visualizer>
+    
+    <div class="browse-container">
+        <div class="browse-header">
+            <h1>My MIDI Files</h1>
+            <p>Your personal MIDI compositions</p>
+        </div>
+        
+        <div class="feed-container">
+            <div class="midi-feed" id="midi-posts">
+                {% for post in midi_posts %}
+                <div class="feed-post">
+                    <div class="post-header">
+                        <div class="user-info">
+                            <div class="user-avatar">
+                                <i class="material-icons">person</i>
+                            </div>
+                            <div class="user-details">
+                                <span class="username">{{ post.username }}</span>
+                                <span class="post-time">MIDI Composition</span>
+                            </div>
+                        </div>
+                        <div class="post-actions">
+                            <button class="action-button" onclick="downloadMidiPost('{{ post.midi_url }}')" title="Download">
+                                <i class="material-icons">download</i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="post-content">
+                        <div class="midi-preview">
+                            <div class="preview-header">
+                                <i class="material-icons">music_note</i>
+                                <span>MIDI Preview</span>
+                            </div>
+                            <div class="preview-visualizer">
+                                <midi-player id="midi-player-{{ loop.index }}" class="hidden-midi-player" src="{{ post.midi_url }}" visualizer="#midi-visualizer-{{ loop.index }}"></midi-player>
+                                <midi-visualizer type="piano-roll" id="midi-visualizer-{{ loop.index }}" class="compact-piano-roll"></midi-visualizer>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="post-footer">
+                        <div class="playback-controls">
+                            <button class="control-btn play-btn" onclick="playPostMidi('midi-player-{{ loop.index }}')" title="Play">
+                                <i class="material-icons">play_arrow</i>
+                            </button>
+                            <button class="control-btn stop-btn" onclick="stopPostMidi('midi-player-{{ loop.index }}')" title="Stop">
+                                <i class="material-icons">stop</i>
+                            </button>
+                        </div>
+                        <div class="post-stats">
+                            <span class="stat-item">
+                                <i class="material-icons">music_note</i>
+                                MIDI File
+                            </span>
+                        </div>
+                    </div>
                 </div>
-                <button class="button" onclick="playPostMidi('midi-player-{{ loop.index }}')" title="play"><i class="material-icons">play_arrow</i></button>
-                <button class="button" onclick="stopPostMidi('midi-player-{{ loop.index }}')" title="stop"><i class="material-icons">stop</i></button>
-                <button class="button" title="save" onclick="downloadMidiPost('{{ post.midi_url }}')">
-                    <i class="material-icons">download</i>
-                </button>
+                {% endfor %}
             </div>
         </div>
-        {% endfor %}
     </div>
-    </div>
+    
     <script src="../static/script.js"></script>
     <script type="module" src="https://cdn.jsdelivr.net/npm/midi-player-js@2.0.16/build/index.browser.min.js"></script>
 </body>

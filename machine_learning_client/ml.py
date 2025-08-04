@@ -104,6 +104,9 @@ def frequency_to_note_name(frequency: float) -> Optional[str]:
     """Convert a frequency in Hertz to a musical note name."""
     if frequency <= 0:
         return None
+    # Convert numpy scalar to Python float if needed
+    if hasattr(frequency, 'item'):
+        frequency = frequency.item()
     frequency = float(frequency)
     note_number = pretty_midi.hz_to_note_number(frequency)
     return pretty_midi.note_number_to_name(int(note_number))
@@ -126,7 +129,7 @@ def process_audio_chunks(audio: np.ndarray, sr: int) -> List[Dict[str, Any]]:
                     notes_data.append({
                         "time": float(t),
                         "note": note_name,
-                        "confidence": round(float(c), 2),
+                        "confidence": round(float(c), 2),  # Convert numpy scalar to Python float
                     })
     
     print(notes_data)
@@ -233,6 +236,11 @@ def estimate_tempo(audio_file: str) -> float:
     """Estimate tempo for better time mapping."""
     y, sr = librosa.load(audio_file, sr=44100)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    # Convert numpy array to scalar if needed
+    if hasattr(tempo, 'item'):
+        tempo = tempo.item()
+    # Ensure tempo is a Python native float
+    tempo = float(tempo)
     logging.info("tempo: %s", tempo)
     return tempo
 
@@ -246,16 +254,34 @@ def create_midi_instrument(filtered_notes: List[Dict[str, Any]], onsets: np.ndar
     instrument_program = pretty_midi.instrument_name_to_program("Acoustic Grand Piano")
     instrument = pretty_midi.Instrument(program=instrument_program)
     
-    for note_info, onset, duration in zip(filtered_notes, onsets, durations):
+    # Ensure we have matching lengths
+    min_length = min(len(filtered_notes), len(onsets), len(durations))
+    logging.info(f"Creating MIDI with {min_length} notes (filtered_notes: {len(filtered_notes)}, onsets: {len(onsets)}, durations: {len(durations)})")
+    
+    for i in range(min_length):
+        note_info = filtered_notes[i]
+        onset = onsets[i]
+        duration = durations[i]
+        
+        # Convert numpy values to Python native types
+        if hasattr(onset, 'item'):
+            onset = onset.item()
+        if hasattr(duration, 'item'):
+            duration = duration.item()
+        
         logging.info("Adding note: %s", note_info)
         logging.info("Adding onset: %s", str(onset))
         logging.info("Adding duration: %s", str(duration))
 
         note_number = pretty_midi.note_name_to_number(note_info["note"])
+        # Ensure note_number is a Python native type
+        if hasattr(note_number, 'item'):
+            note_number = note_number.item()
+        note_number = int(note_number)
         logging.info("Note number: %s", note_number)
 
-        start_time = onset
-        end_time = start_time + duration
+        start_time = float(onset)
+        end_time = start_time + float(duration)
 
         note = pretty_midi.Note(
             velocity=100, pitch=note_number, start=start_time, end=end_time
@@ -270,13 +296,19 @@ def create_midi(filtered_notes: List[Dict[str, Any]], onsets: np.ndarray, durati
     logging.info("Received notes for MIDI creation: %s", filtered_notes)
     logging.info("Starting to create MIDI file.")
     
+    # Ensure tempo is a Python native type
+    if hasattr(tempo, 'item'):
+        tempo = tempo.item()
+    tempo = float(tempo)
+    
     if tempo <= 0:
         logging.warning("Invalid tempo detected. Setting default tempo.")
-        tempo = 120
+        tempo = 120.0
     
     static_dir = os.path.join(app.root_path, "static")
     if not os.path.exists(static_dir):
         os.makedirs(static_dir)
+        logging.info("Created static directory: %s", static_dir)
     
     midi_file_path = os.path.join(static_dir, output_file)
     midi_data = pretty_midi.PrettyMIDI(initial_tempo=tempo)
@@ -305,7 +337,8 @@ def create_and_store_midi_in_s3(filtered_notes: List[Dict[str, Any]], onsets: np
         local_midi_file_path = f"static/{midi_filename}"
         s3.upload_file(local_midi_file_path, s3_bucket_name, midi_filename)
 
-        midi_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{midi_filename}"
+        # Return proxy URL that works from the browser
+        midi_url = f"http://localhost:5001/proxy-midi/{midi_filename}"
         
         if os.path.exists(local_midi_file_path):
             os.remove(local_midi_file_path)
@@ -372,42 +405,75 @@ def store_in_db(user_id: str, username: str, midi_url: str) -> None:
 def process_data():
     """Main route to process audio data and generate MIDI."""
     try:
+        logging.info("Received audio processing request")
+        
         # Validate request
         if "audio" not in request.files:
+            logging.error("No audio file found in request")
             raise ValueError("No audio file found in the request")
         
         file = request.files["audio"]
         user_id = request.form.get("user_id")
+        
+        logging.info(f"Processing audio file: {file.filename}, content_type: {file.content_type}")
 
         # Check MIME type
         if file.content_type != "audio/webm":
+            logging.error(f"Unsupported content type: {file.content_type}")
             return jsonify({"error": "Unsupported Media Type"}), 415
 
         # Process audio files
         webm_file = "temp_recording.webm"
         wav_file = "temp_recording.wav"
 
+        logging.info("Writing audio file to disk")
         write_audio_to_file(webm_file, file)
+        
+        logging.info("Converting WebM to WAV")
         convert_webm_to_wav(webm_file, wav_file)
 
         # Extract notes from audio
+        logging.info("Reading audio file with soundfile")
         audio, sr = sf.read(wav_file)
+        logging.info(f"Audio loaded: shape={audio.shape}, sample_rate={sr}")
+        
+        logging.info("Processing audio chunks for pitch detection")
         notes_data = process_audio_chunks(audio, sr)
         notes_data_sorted = sort_notes_data(notes_data)
         logging.info("Chunked notes data for jsonify: %s", notes_data_sorted)
 
         # Analyze timing and tempo
+        logging.info("Loading audio with librosa for timing analysis")
         y, sr = librosa.load(wav_file, sr=44100)
+        
+        logging.info("Detecting note onsets")
         onsets = detect_note_onsets(wav_file)
+        
+        logging.info("Estimating note durations")
         durations = estimate_note_durations(onsets, y, sr=44100)
+        
+        logging.info("Estimating tempo")
         tempo = estimate_tempo(wav_file)
 
         # Clean up temporary files
+        logging.info("Cleaning up temporary files")
         clean_up_files(webm_file, wav_file)
 
+        # Check if we have any notes to process
+        processed_notes = process_notes(notes_data)
+        if not processed_notes:
+            logging.warning("No notes detected in audio")
+            return jsonify({"error": "No musical notes detected in the audio. Please try recording again with clearer audio."}), 400
+        
+        # Check if we have onsets and durations
+        if len(onsets) == 0 or len(durations) == 0:
+            logging.warning("No onsets or durations detected")
+            return jsonify({"error": "Could not detect timing information. Please try recording again."}), 400
+        
         # Generate and store MIDI
+        logging.info("Creating and storing MIDI file")
         midi_url = create_and_store_midi_in_s3(
-            process_notes(notes_data), onsets, durations, tempo
+            processed_notes, onsets, durations, tempo
         )
 
         if midi_url is None:
@@ -416,8 +482,10 @@ def process_data():
 
         # Store in database if user is logged in
         if user_id:
+            logging.info(f"Storing MIDI in database for user: {user_id}")
             store_in_db(user_id, find_username(user_id), midi_url)
 
+        logging.info(f"Successfully processed audio, MIDI URL: {midi_url}")
         return jsonify({"midi_url": midi_url})
 
     except IOError as e:
@@ -426,6 +494,9 @@ def process_data():
     except ValueError as e:
         app.logger.error("Value error occurred: %s", e)
         return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        app.logger.error("Unexpected error occurred: %s", e)
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 
 # =============================================================================

@@ -7,6 +7,8 @@ services:
     container_name: auravoice-webapp-container
     ports:
       - "5001:5000"
+    env_file:
+      - ./web_app/.env
   client:
     build:
       context: ./machine_learning_client
@@ -15,6 +17,8 @@ services:
     container_name: auravoice-client-container
     ports:
       - "5002:5002"
+    env_file:
+      - ./machine_learning_client/.env
   database:
     image: mongo:4.2
     container_name: auravoice-database-container

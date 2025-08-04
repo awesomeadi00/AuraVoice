@@ -67,19 +67,10 @@ S3_BUCKET_NAME
 
 ```
 .env for web_app/ folder:
-
-# MongoDB Configuration (Local Container - auto-configured)
-MONGO_URI=mongodb://admin:password123@mongodb:27017/auravoice?authSource=admin
-MONGO_DBNAME=auravoice
-
-# Flask Configuration
-FLASK_APP=app.py
-APP_SECRET_KEY=your-secret-key-here
-
-# AWS S3 Configuration
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-S3_BUCKET_NAME=your-s3-bucket-name
+APP_SECRET_KEY
+AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY
+S3_BUCKET_NAME
 ```
 
 4. Build docker images and run the containers:

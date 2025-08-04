@@ -30,25 +30,83 @@
         <div class="upload-section">  
             
             <div class="visualizer-container" id="midiVisualizer">
-                <midi-player class="midi-player" src="" sound-font visualizer="#myVisualizer"></midi-player>
-                <midi-visualizer type="piano-roll" id="myVisualizer" class="piano-roll"></midi-visualizer>
-                <div class="loader-container" id="loader" style="display:none;">
-                    <div class="spinner"></div>
+                <div class="visualizer-header">
+                    <div class="visualizer-title">
+                        <i class="material-icons">music_note</i>
+                        <span>MIDI Visualizer</span>
+                    </div>
+                    <div class="visualizer-status" id="visualizerStatus">
+                        <span class="status-indicator" id="statusIndicator"></span>
+                        <span class="status-text" id="statusText">Ready to record</span>
+                    </div>
                 </div>
                 
+                <div class="visualizer-content">
+                    <div class="midi-player-wrapper">
+                        <midi-player class="midi-player" src="" sound-font visualizer="#myVisualizer"></midi-player>
+                    </div>
+                    
+                    <div class="piano-roll-container">
+                        <div class="piano-roll-header">
+                            <i class="material-icons">piano</i>
+                            <span>Piano Roll</span>
+                        </div>
+                        <div class="piano-roll-content">
+                            <midi-visualizer type="piano-roll" id="myVisualizer" class="piano-roll"></midi-visualizer>
+                        </div>
+                    </div>
+                    
+                    <div class="visualizer-placeholder" id="visualizerPlaceholder">
+                        <div class="placeholder-content">
+                            <div class="placeholder-icon">
+                                <i class="material-icons">mic</i>
+                            </div>
+                            <h3>Start Recording</h3>
+                            <p>Click the record button to begin creating your MIDI sequence</p>
+                            <div class="placeholder-animation">
+                                <div class="wave-container">
+                                    <div class="wave"></div>
+                                    <div class="wave"></div>
+                                    <div class="wave"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="loader-container" id="loader" style="display:none;">
+                    <div class="loader-content">
+                        <div class="spinner"></div>
+                        <p>Processing your MIDI...</p>
+                    </div>
+                </div>
             </div>            
 
             <div id="control-container" class="button-container">
-                <button class="button" id="recordButton" title="Start Recording" onclick="toggleRecording();">
+                <button class="button control-button" id="recordButton" title="Start Recording" onclick="toggleRecording();">
                     <i class="material-icons" id="recordIcon">fiber_manual_record</i>
+                    <span class="button-text">Record</span>
                 </button>
-                <button class="button" id="play" title="play" onclick="playMidi()"><i class="material-icons">play_arrow</i></button>
-                <button class="button" id="stop" title="stop" onclick="stopMidi()"><i class="material-icons">stop</i></button>
-                <button class="button" id="save" title="save" onclick="downloadMidi();"><i class="material-icons">download</i></button>
-                <label class="button" id="fileBtn" title="upload midi" onclick="uploadMidi();">
-                    <i class="material-icons">cloud_upload</i> 
+                <button class="button control-button" id="play" title="play" onclick="playMidi()">
+                    <i class="material-icons">play_arrow</i>
+                    <span class="button-text">Play</span>
+                </button>
+                <button class="button control-button" id="stop" title="stop" onclick="stopMidi()">
+                    <i class="material-icons">stop</i>
+                    <span class="button-text">Stop</span>
+                </button>
+                <button class="button control-button" id="save" title="save" onclick="downloadMidi();">
+                    <i class="material-icons">download</i>
+                    <span class="button-text">Save</span>
+                </button>
+                <label class="button control-button" id="fileBtn" title="upload midi" onclick="uploadMidi();">
+                    <i class="material-icons">cloud_upload</i>
+                    <span class="button-text">Upload</span>
                 </label> 
-            <button class="button" title="information" onclick="toggleDescription()"><i class="material-icons">info</i></button>
+                <button class="button control-button" title="information" onclick="toggleDescription()">
+                    <i class="material-icons">info</i>
+                    <span class="button-text">Info</span>
+                </button>
             </div>
 
             <div id="notification" class="notification-hidden">
